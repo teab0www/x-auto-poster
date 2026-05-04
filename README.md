@@ -1,19 +1,43 @@
 # X Auto-Poster
 
-A Chrome extension that reads scheduled posts from a data source and automatically publishes them on X (Twitter) at their scheduled time — no X API required.
+A Chrome extension that reads scheduled posts from a data source and automatically publishes them on X (Twitter) at their scheduled time — **no X API required**.
 
-It works by automating the X.com compose UI directly from the browser, so it costs nothing and bypasses API rate limits entirely.
+It works by automating the X.com compose UI directly from the browser: zero API cost, no rate limits, no OAuth setup.
+
+> **Extensible by design.** The default data source is Supabase, but any REST-accessible backend can be wired in by editing a single file (`background.js`). Notion, Airtable, Google Sheets, your own API — anything that returns a list of `{ id, content, scheduled_at }` objects works.
+
+---
+
+## Demo
+
+<!-- demo GIF -->
 
 ---
 
 ## How it works
 
-1. Posts (content + scheduled timestamp) live in a database — Supabase by default, but any REST-accessible backend works with minor edits to `background.js`.
-2. On startup and once every 24 hours the extension fetches all pending posts scheduled in the next 24 hours and registers a Chrome alarm for each one.
-3. When an alarm fires, the extension opens `x.com/compose/post`, types the content into the compose modal, and clicks Post.
+1. Posts (content + scheduled timestamp) live in a database — Supabase by default.
+2. On startup and once every 24 hours the extension syncs all pending posts scheduled in the next 24 hours and registers a Chrome alarm for each one.
+3. When an alarm fires, the extension opens `x.com/compose/post`, types the content into the compose modal using randomised delays to mimic human input, and clicks Post.
 4. The result (success or failure) is written back to the database.
 
 **Important:** The browser must be running at the scheduled time. If Chrome is closed when an alarm would have fired, those posts are automatically marked as `failed` (missed) on the next startup.
+
+---
+
+## Technical notes
+
+### Anti-detection / human-like input
+
+Rather than programmatically setting the textarea value (which X.com ignores — it uses a DraftJS rich-text editor), the extension uses `document.execCommand('insertText')` to inject text as a single atomic operation, paired with a randomised pause of 1–3 seconds before clicking Post. This mimics human typing cadence and avoids triggering DraftJS's internal input guards.
+
+### Scheduling precision
+
+Chrome's alarms API has a minimum resolution of ~1 minute. Posts may fire up to ~60 seconds after their scheduled time. This is a platform constraint — background service workers cannot maintain tighter timing without an always-on process.
+
+### Post now (manual trigger)
+
+The **Post now** button navigates your current X.com tab to `x.com/compose/post`, then injects the content script into that tab. This is why you need to have an X.com tab open first — the extension cannot inject scripts into tabs that aren't already on X.com (Chrome's `host_permissions` model). The tab returns to its original URL after posting.
 
 ---
 
@@ -36,26 +60,22 @@ create table posts (
 create index posts_status_scheduled_at on posts (status, scheduled_at);
 ```
 
-Column descriptions:
-
 | Column | Type | Description |
 |---|---|---|
 | `id` | uuid | Auto-generated primary key |
 | `content` | text | The tweet text to post |
-| `scheduled_at` | timestamp | When to post (local time stored without timezone) |
+| `scheduled_at` | timestamp | When to post (no timezone — matches your local machine clock) |
 | `posted_at` | timestamp | Filled in automatically on success |
 | `status` | text | `pending` → `success` or `failed` |
 | `error` | text | Error message if posting failed, null otherwise |
 
 Find your **Project URL** and **anon public key** under Project Settings → API.
 
-> Using a different backend? Replace the `supabaseFetch` calls in `background.js` with your own HTTP client. The shape expected is an array of `{ id, content, scheduled_at, status }` objects.
-
 ### 2. Add posts
 
 Insert rows into the `posts` table with `status = 'pending'` and a future `scheduled_at` timestamp. You can use the Supabase dashboard, any SQL client, a CSV import, or your own script.
 
-CSV format expected:
+CSV format:
 
 ```
 content,scheduled_at
@@ -65,7 +85,7 @@ content,scheduled_at
 ### 3. Load the extension
 
 1. Clone this repo or download the `extension/` folder.
-2. Open `extension/config.js` and fill in your Supabase URL and anon key — **or** leave them blank and enter them in the extension popup later.
+2. Open `extension/config.js` and fill in your Supabase URL and anon key — **or** leave them blank and enter them in the extension popup's Configuration section.
 3. Open Chrome → `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the `extension/` folder.
 4. Open the extension popup and click **Sync now**.
 
@@ -73,22 +93,28 @@ content,scheduled_at
 
 ## Usage
 
-- **Sync now** — manually refresh alarms from the database (useful after adding new posts).
-- **Post now** — appears on any pending post; navigate to any x.com page first, then click it to post immediately without waiting for the scheduled time.
-- **Configuration** — expand this section to update your Supabase URL and anon key without editing code.
+- **Sync now** — manually refresh alarms from the database (useful right after adding new posts).
+- **Post now** — manually trigger a pending post immediately. Requires an X.com tab to be open in the current window; the extension will navigate it to the compose modal and post.
+- **Configuration** — expand to update your Supabase URL and anon key without editing code.
 
 ---
 
-## Data source
+## Swapping the data source
 
-The default data source is **Supabase** (PostgreSQL + auto-generated REST API). It was chosen because it has a generous free tier and zero-config REST, but the extension can be adapted to any backend by editing the fetch helpers in `background.js`.
+All Supabase calls are isolated in `background.js` inside `supabaseFetch`. To use a different backend:
+
+1. Replace `supabaseFetch` with your own HTTP client.
+2. Make sure your endpoint returns objects with at least `{ id, content, scheduled_at, status }`.
+3. Update the PATCH call in `updatePostStatus` to write back `status`, `posted_at`, and `error`.
+
+That's it — no other files need to change.
 
 ---
 
 ## Roadmap / ideas for improvement
 
 - **Multiple X accounts** — support switching between accounts or posting to several at once
-- **Image attachments** — attach photos to posts (requires file upload into the compose modal)
+- **Image attachments** — attach photos to posts via the compose modal file picker
 - **Reply chains** — post as a thread or reply to an existing tweet
 - **Better scheduling UI** — popup calendar/time picker to schedule posts directly from the extension
 - **Retry logic** — automatically retry failed posts instead of requiring manual intervention
@@ -99,9 +125,9 @@ The default data source is **Supabase** (PostgreSQL + auto-generated REST API). 
 ## Limitations
 
 - Requires Chrome (or any Chromium browser) to be **open** at posting time.
-- Chrome alarms have a minimum resolution of ~1 minute.
-- Uses `document.execCommand('insertText')`, which is deprecated but still the only reliable way to drive DraftJS editors (what X.com uses) without access to React internals.
-- X.com DOM selectors may break if Twitter changes their front-end. The key selectors are `[data-testid="tweetTextarea_0"]` and `[data-testid="tweetButton"]`.
+- Chrome alarms fire within ~1 minute of the target time (platform limitation).
+- Uses `document.execCommand('insertText')`, which is deprecated but currently the only reliable way to drive DraftJS editors without React internals access.
+- X.com DOM selectors (`[data-testid="tweetTextarea_0"]`, `[data-testid="tweetButton"]`) may break if Twitter updates their front-end.
 
 ---
 
