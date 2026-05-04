@@ -10,7 +10,9 @@ It works by automating the X.com compose UI directly from the browser: zero API 
 
 ## Demo
 
-<!-- demo GIF -->
+![Demo](demo.gif)
+
+Manual trigger: the extension opens the X.com compose modal, pastes the scheduled post, and submits it. The database entry is updated to `success` in the background once the post goes through.
 
 ---
 
@@ -121,6 +123,7 @@ No other files need to change.
 - **Better scheduling UI** - popup calendar/time picker to schedule posts directly from the extension
 - **Retry logic** - automatically retry failed posts instead of requiring manual intervention
 - **Non-Supabase adapters** - Notion, Airtable, Google Sheets as data sources
+- **Tunable delays** - the pre-submit pause (currently 1-3 seconds, randomised) could be increased to further reduce detection risk on high-volume accounts
 
 ---
 
