@@ -36,6 +36,17 @@ create table posts (
 create index posts_status_scheduled_at on posts (status, scheduled_at);
 ```
 
+Column descriptions:
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | uuid | Auto-generated primary key |
+| `content` | text | The tweet text to post |
+| `scheduled_at` | timestamp | When to post (local time stored without timezone) |
+| `posted_at` | timestamp | Filled in automatically on success |
+| `status` | text | `pending` → `success` or `failed` |
+| `error` | text | Error message if posting failed, null otherwise |
+
 Find your **Project URL** and **anon public key** under Project Settings → API.
 
 > Using a different backend? Replace the `supabaseFetch` calls in `background.js` with your own HTTP client. The shape expected is an array of `{ id, content, scheduled_at, status }` objects.
