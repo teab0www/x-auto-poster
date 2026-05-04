@@ -1,0 +1,5 @@
+# Personal data / uploaded content
+*.csv
+
+# Claude internal settings
+.claude/
