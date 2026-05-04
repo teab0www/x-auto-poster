@@ -10,7 +10,7 @@ It works by automating the X.com compose UI directly from the browser: zero API 
 
 ## Demo
 
-![Demo](demo.gif)
+![Manual post triggered from the extension popup](demo.gif)
 
 Manual trigger: the extension opens the X.com compose modal, pastes the scheduled post, and submits it. The database entry is updated to `success` in the background once the post goes through.
 
